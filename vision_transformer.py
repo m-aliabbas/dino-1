@@ -1,20 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#     http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""
-Mostly copy-paste from timm library.
-https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
-"""
 import math
 from functools import partial
 
@@ -156,7 +139,7 @@ class VisionTransformer(nn.Module):
         self.norm = norm_layer(embed_dim)
 
         # Classifier head
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Sequential(*[nn.Linear(2*embed_dim, embed_dim), nn.GELU(), nn.Linear(embed_dim, num_classes)]) if num_classes > 0 else nn.Identity()
 
         trunc_normal_(self.pos_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
@@ -205,13 +188,21 @@ class VisionTransformer(nn.Module):
         x = x + self.interpolate_pos_encoding(x, w, h)
 
         return self.pos_drop(x)
-
-    def forward(self, x):
+    
+    def forward(self, x, classify=False):
+        
         x = self.prepare_tokens(x)
-        for blk in self.blocks:
+
+        for i, blk in enumerate(self.blocks):
             x = blk(x)
+           
         x = self.norm(x)
-        return x[:, 0]
+        if classify: 
+            return self.head( torch.cat( (x[:, 0], torch.mean(x[:, 1:], dim=1)), dim=1 ) )
+        
+        return x
+    
+    
 
     def get_last_selfattention(self, x):
         x = self.prepare_tokens(x)
@@ -235,7 +226,7 @@ class VisionTransformer(nn.Module):
 
 def vit_tiny(patch_size=16, **kwargs):
     model = VisionTransformer(
-        patch_size=patch_size, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=6, depth=12, num_heads=3, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -254,29 +245,69 @@ def vit_base(patch_size=16, **kwargs):
     return model
 
 
-class DINOHead(nn.Module):
-    def __init__(self, in_dim, out_dim, use_bn=False, norm_last_layer=True, nlayers=3, hidden_dim=2048, bottleneck_dim=256):
+class PROJHead(nn.Module):
+    def __init__(self, in_dim, out_dim, nlayers=3, hidden_dim=2048, bottleneck_dim=256):
+        """
+        Initializes the class instance.
+
+        Args:
+            in_dim (int): The input dimension.
+            out_dim (int): The output dimension.
+            nlayers (int, optional): The number of layers in the MLP. Defaults to 3.
+            hidden_dim (int, optional): The dimension of the hidden layers. Defaults to 2048.
+            bottleneck_dim (int, optional): The dimension of the bottleneck layer. Defaults to 256.
+        """
         super().__init__()
-        nlayers = max(nlayers, 1)
-        if nlayers == 1:
-            self.mlp = nn.Linear(in_dim, bottleneck_dim)
-        else:
-            layers = [nn.Linear(in_dim, hidden_dim)]
-            if use_bn:
-                layers.append(nn.BatchNorm1d(hidden_dim))
+
+        layers = [nn.Linear(in_dim, hidden_dim)]
+        layers.append(nn.GELU())
+        for _ in range(nlayers - 2):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.GELU())
-            for _ in range(nlayers - 2):
-                layers.append(nn.Linear(hidden_dim, hidden_dim))
-                if use_bn:
-                    layers.append(nn.BatchNorm1d(hidden_dim))
-                layers.append(nn.GELU())
-            layers.append(nn.Linear(hidden_dim, bottleneck_dim))
-            self.mlp = nn.Sequential(*layers)
+        layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+        
+        self.mlp = nn.Sequential(*layers)
         self.apply(self._init_weights)
+        
+        # normalize the weights
         self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
         self.last_layer.weight_g.data.fill_(1)
-        if norm_last_layer:
-            self.last_layer.weight_g.requires_grad = False
+        self.last_layer.weight_g.requires_grad = False
+        
+        self.data_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
+        self.data_layer.weight_g.data.fill_(1)
+        self.data_layer.weight_g.requires_grad = False
+        def _init_weights(self, m):
+            if isinstance(m, nn.Linear):
+                trunc_normal_(m.weight, std=.02)
+                if isinstance(m, nn.Linear) and m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.mlp(x)
+        
+        # project into unit sphere
+        x = nn.functional.normalize(x, dim=-1, p=2)
+        x_cls = self.last_layer(x[:, 0])
+        x_data = self.data_layer(x[:, 1:])
+        return x_cls, x_data
+
+
+class RECHead(nn.Module):
+    def __init__(self, in_dim, in_chans=3, patch_size=16):
+        super().__init__()
+
+        layers = [nn.Linear(in_dim, in_dim)]
+        layers.append(nn.GELU())
+        layers.append(nn.Linear(in_dim, in_dim))
+        layers.append(nn.GELU())
+
+        self.mlp = nn.Sequential(*layers)
+        self.apply(self._init_weights)
+        
+        self.convTrans = nn.ConvTranspose2d(in_dim, in_chans, kernel_size=(patch_size, patch_size), 
+                                                stride=(patch_size, patch_size))
+
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -286,6 +317,10 @@ class DINOHead(nn.Module):
 
     def forward(self, x):
         x = self.mlp(x)
-        x = nn.functional.normalize(x, dim=-1, p=2)
-        x = self.last_layer(x)
-        return x
+        
+        x_rec = x.transpose(1, 2)
+        out_sz = tuple( (  int(math.sqrt(x_rec.size()[2]))  ,   int(math.sqrt(x_rec.size()[2])) ) )
+        x_rec = self.convTrans(x_rec.unflatten(2, out_sz))
+                
+                
+        return x_rec
