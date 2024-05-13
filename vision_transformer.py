@@ -277,7 +277,7 @@ class PROJHead(nn.Module):
         self.data_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
         self.data_layer.weight_g.data.fill_(1)
         self.data_layer.weight_g.requires_grad = False
-        def _init_weights(self, m):
+    def _init_weights(self, m):
             if isinstance(m, nn.Linear):
                 trunc_normal_(m.weight, std=.02)
                 if isinstance(m, nn.Linear) and m.bias is not None:
