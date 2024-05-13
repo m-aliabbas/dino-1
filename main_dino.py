@@ -19,7 +19,7 @@ from torchvision import models as torchvision_models
 
 import utils
 import vision_transformer as vits
-from vision_transformer import DINOHead
+# from vision_transformer import DINOHead
 
 
 
@@ -54,6 +54,13 @@ def get_args_parser():
         mixed precision training (--use_fp16 false) to avoid unstabilities.""")
     parser.add_argument('--drop_path_rate', type=float, default=0.1, help="stochastic depth rate")
 
+    # Reconstruction head parameters
+    parser.add_argument('--drop_perc', type=float, default=0.5, help='Drop X percentage of the input image')
+    parser.add_argument('--drop_replace', type=float, default=0.3, help='Replace X percentage of the input image')
+    
+    parser.add_argument('--drop_align', type=int, default=1, help='Align drop with patches')
+    parser.add_argument('--drop_type', type=str, default='zeros', help='Drop Type.')
+    parser.add_argument('--drop_only', type=int, default=1, help='Align drop with patches')
     # A: Change Output DIM to 8192 as MCSSL
     # DINO Head Params
     parser.add_argument('--out_dim', default=8192, type=int, help="""Dimensionality of
@@ -125,7 +132,7 @@ def get_args_parser():
     # Misc
     parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
         help='Please specify path to the ImageNet training data.')
-    parser.add_argument('--output_dir', default="/DINO_OUTPUT/", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--output_dir', default="./DINO_OUTPUT/", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--saveckp_freq', default=20, type=int, help='Save checkpoint every x epochs.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
@@ -182,7 +189,7 @@ def train_dino(args):
     teacher = vits.__dict__[args.arch](patch_size=args.patch_size, img_size=[args.img_size])
     embed_dim = student.embed_dim
     print('='*50)
-    print('Embedding Dim',embed_dim.shape)
+    print('Embedding Dim',embed_dim)
     print('='*50)
     # multi-crop wrapper handles forward with inputs of different resolutions
     student = FullModelPipline(student, vits.PROJHead(embed_dim, args.out_dim),
@@ -278,7 +285,7 @@ def train_dino(args):
         data_loader.sampler.set_epoch(epoch)
 
         # ============ training one epoch of DINO ... ============
-        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
+        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, calc_loss,recons_loss,
             data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, args)
 
