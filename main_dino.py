@@ -408,9 +408,9 @@ class FullModelPipline(nn.Module):
         
         recons_imgs = self.head_recons(_out[:, 1:]) if recons == True else None
          
-        cls_ftrs, data_ftrs = self.head(_out)
+        cls_ftrs = self.head(_out)
         
-        return  cls_ftrs, data_ftrs, recons_imgs
+        return  cls_ftrs, '', recons_imgs
     
 class DINOLoss(nn.Module):
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
