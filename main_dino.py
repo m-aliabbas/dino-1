@@ -192,9 +192,14 @@ def train_dino(args):
     print('Embedding Dim',embed_dim)
     print('='*50)
     # multi-crop wrapper handles forward with inputs of different resolutions
-    student = FullModelPipline(student, vits.PROJHead(embed_dim, args.out_dim),
+    student = FullModelPipline(student, vits.DINOHead(
+        embed_dim,
+        args.out_dim,
+        use_bn=args.use_bn_in_head,
+        norm_last_layer=args.norm_last_layer,
+    ),
                                         vits.RECHead(embed_dim, patch_size=args.patch_size))
-    teacher = FullModelPipline(teacher, vits.PROJHead(embed_dim, args.out_dim),
+    teacher = FullModelPipline(teacher, vits.DINOHead(embed_dim, args.out_dim, args.use_bn_in_head),
                                         vits.RECHead(embed_dim, patch_size=args.patch_size))
     # move networks to gpu
     student, teacher = student.cuda(), teacher.cuda()
@@ -379,8 +384,8 @@ def train_one_epoch(student, teacher, teacher_without_ddp, calc_loss,recons_loss
         # logging
         torch.cuda.synchronize()
         metric_logger.update(r_loss=r_loss.item())
-        metric_logger.update(c_loss=c_loss.item())
-        metric_logger.update(p_loss=p_loss.item())
+        # metric_logger.update(c_loss=c_loss.item())
+        # metric_logger.update(p_loss=p_loss.item())
         metric_logger.update(loss=loss.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
