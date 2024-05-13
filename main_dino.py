@@ -278,7 +278,7 @@ def train_dino(args):
         data_loader.sampler.set_epoch(epoch)
 
         # ============ training one epoch of DINO ... ============
-        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, dino_loss,
+        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, calc_loss,recons_loss,
             data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, args)
 
