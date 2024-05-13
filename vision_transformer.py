@@ -284,13 +284,12 @@ class PROJHead(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        x = self.mlp(x)
-        
+        x = self.mlp(x) 
         # project into unit sphere
         x = nn.functional.normalize(x, dim=-1, p=2)
-        x_cls = self.last_layer(x[:, 0])
-        x_data = self.data_layer(x[:, 1:])
-        return x_cls, x_data
+        x_cls = self.last_layer(x)
+        
+        return x_cls
 
 
 class RECHead(nn.Module):

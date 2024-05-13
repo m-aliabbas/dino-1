@@ -600,14 +600,15 @@ class MultiCropWrapper(nn.Module):
     concatenate all the output features and run the head forward on these
     concatenated features.
     """
-    def __init__(self, backbone, head):
+    def __init__(self, backbone, head,head_recons):
         super(MultiCropWrapper, self).__init__()
         # disable layers dedicated to ImageNet labels classification
         backbone.fc, backbone.head = nn.Identity(), nn.Identity()
         self.backbone = backbone
         self.head = head
+        self.head_recons = head_recons
 
-    def forward(self, x):
+    def forward(self, x,recons = True):
         # convert to list
         if not isinstance(x, list):
             x = [x]
@@ -618,6 +619,8 @@ class MultiCropWrapper(nn.Module):
         start_idx, output = 0, torch.empty(0).to(x[0].device)
         for end_idx in idx_crops:
             _out = self.backbone(torch.cat(x[start_idx: end_idx]))
+
+            recons_imgs = self.head_recons(_out[:, 1:]) if recons == True else None
             # The output is a tuple with XCiT model. See:
             # https://github.com/facebookresearch/xcit/blob/master/xcit.py#L404-L405
             if isinstance(_out, tuple):
@@ -626,6 +629,7 @@ class MultiCropWrapper(nn.Module):
             output = torch.cat((output, _out))
             start_idx = end_idx
         # Run the head forward on the concatenated features.
+        recons_imgs = self.head_recons(_out[:, 1:]) if recons == True else None
         return self.head(output)
 
 

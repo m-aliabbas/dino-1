@@ -402,7 +402,7 @@ class FullModelPipline(nn.Module):
         _out = self.backbone(torch.cat(x[0:]))
         
         recons_imgs = self.head_recons(_out[:, 1:]) if recons == True else None
-        
+         
         cls_ftrs, data_ftrs = self.head(_out)
         
         return  cls_ftrs, data_ftrs, recons_imgs
