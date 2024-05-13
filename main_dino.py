@@ -339,7 +339,7 @@ def train_one_epoch(student, teacher, teacher_without_ddp, calc_loss,recons_loss
         with torch.cuda.amp.autocast(fp16_scaler is not None):
             t_cls, t_data, _        = teacher(orig_imgs[:2]) 
             s_cls, s_data, s_recons = student(corr_imgs[:2], recons=True)
-            
+            print(t_cls.shape,s_cls.shape)
             # # local crops
             # l_cls, _, _ = student(orig_imgs[2:])
 
@@ -435,19 +435,21 @@ class DINOLoss(nn.Module):
         """
         student_out = student_output / self.student_temp
         student_out = student_out.chunk(self.ncrops)
-
+        
         # teacher centering and sharpening
         temp = self.teacher_temp_schedule[epoch]
         teacher_out = F.softmax((teacher_output - self.center) / temp, dim=-1)
         teacher_out = teacher_out.detach().chunk(2)
-
+        
         total_loss = 0
         n_loss_terms = 0
+        # print(len(student_out),len(teacher_out))
         for iq, q in enumerate(teacher_out):
             for v in range(len(student_out)):
                 if v == iq:
                     # we skip cases where student and teacher operate on the same view
                     continue
+                
                 loss = torch.sum(-q * F.log_softmax(student_out[v], dim=-1), dim=-1)
                 total_loss += loss.mean()
                 n_loss_terms += 1
