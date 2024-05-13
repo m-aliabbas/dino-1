@@ -221,17 +221,17 @@ def train_dino(args):
     print(f"Student and Teacher are built: they are both {args.arch} network.")
 
     # ============ preparing loss ... ============
-    # dino_loss = DINOLoss(
-    #     args.out_dim,
-    #     args.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
-    #     args.warmup_teacher_temp,
-    #     args.teacher_temp,
-    #     args.warmup_teacher_temp_epochs,
-    #     args.epochs,
-    # ).cuda()
+    calc_loss = DINOLoss(
+        args.out_dim,
+        args.local_crops_number + 2,  # total number of crops = 2 global crops + local_crops_number
+        args.warmup_teacher_temp,
+        args.teacher_temp,
+        args.warmup_teacher_temp_epochs,
+        args.epochs,
+    ).cuda()
 
-    calc_loss = losses.CALCULATELoss(args.out_dim, args.warmup_teacher_temp,
-        args.teacher_temp, args.warmup_teacher_temp_epochs, args.epochs).cuda()
+    # calc_loss = losses.CALCULATELoss(args.out_dim, args.warmup_teacher_temp,
+    #     args.teacher_temp, args.warmup_teacher_temp_epochs, args.epochs).cuda()
 
     recons_loss = nn.MSELoss(reduction='none').cuda()
 
@@ -335,17 +335,17 @@ def train_one_epoch(student, teacher, teacher_without_ddp, calc_loss,recons_loss
             t_cls, t_data, _        = teacher(orig_imgs[:2]) 
             s_cls, s_data, s_recons = student(corr_imgs[:2], recons=True)
             
-            # local crops
-            l_cls, _, _ = student(orig_imgs[2:])
+            # # local crops
+            # l_cls, _, _ = student(orig_imgs[2:])
 
             # A: Classification loss
-            c_loss, p_loss = calc_loss(torch.cat((s_cls, l_cls), dim=0), t_cls, s_data, t_data, epoch)
-
+            # c_loss, p_loss = calc_loss(torch.cat((s_cls, l_cls), dim=0), t_cls, s_data, t_data, epoch)
+            dino_loss = calc_loss(t_cls, s_cls, epoch)
             # Recons Loss -------------------------------------------------
             rloss = recons_loss(s_recons, torch.cat(orig_imgs[:2]))
             r_loss = rloss[torch.cat(masks[0:])==1].mean() 
 
-            loss = c_loss + p_loss + r_loss 
+            loss = dino_loss + r_loss 
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
